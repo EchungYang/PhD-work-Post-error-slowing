@@ -1,0 +1,243 @@
+---
+title: "Untitled"
+author: "Yiqiong Yang (Miriam)"
+date: "2022-08-30"
+output: html_document
+---
+
+This markdown documents the cleaning process of the data from the PES calculation markdown. 
+path = ("ReadytoAnalyseData/PESPEA_Calculating.Rmd")
+
+This process include calculating the average PES, PEA, correct and incorrect rate for each participant.
+
+The cleaning process and decision making 
+
+ID 57502 & 94470 incorr rate too high in Flanker
+ID 57502 Incorr 118, 
+ID 94470 Incorr 116
+Decision: The two participants' data got removed because it seems that they did not understand the task rule and made too many mistakes 
+
+Regarding the outlier treatment, we have trimmed 28 PEStrad and 31 PESrobust by the mean+-sd.
+
+After the outlier treatment, we replaced all NA in flanker with 0. 
+
+```{r Set up and loading data}
+
+require(tidyverse)
+require(jtools)
+library(dplyr)
+
+Alltrial <- read_csv("ReadytoAnalyseData/Alltrial_566.csv")
+
+```
+
+```{r Calculate average}
+# detach(package:Rmisc)
+
+Average <- Alltrial %>%
+  mutate(RTcorr = case_when(Accuracy == 1 ~ RT),
+           RTincorr = case_when(Accuracy == 0 ~ RT)) %>%
+  group_by(RandomID, Group, Task) %>%
+  dplyr::summarize(RT = mean(RT, na.rm = T),
+            RTcorr = mean(RTcorr, na.rm = T),
+            RTincorr = mean(RTincorr, na.rm = T),
+            cceCc = mean(cceCc, na.rm = T),
+            cCecc = mean(cCecc, na.rm = T),
+            postE = mean(postE, na.rm = T),
+            postC = mean(postC, na.rm = T),
+            PEC = sum(PEC == "Yes", na.rm = T),
+            PEE = sum(PEE == "Yes", na.rm = T),
+            PCC = sum(PCC == "Yes", na.rm = T),
+            PCE = sum(PCE == "Yes", na.rm = T),
+            Corr = sum(Accuracy == 1, na.rm = T),
+            Incorr = sum(Accuracy == 0, na.rm = T)) %>%
+  mutate(PEStrad = postE - postC,
+         PESrobust = cceCc - cCecc,
+         PEA = PEC/(PEC + PEE),
+         PCA = PCC/(PCC + PCE),
+         CorrRate = Corr/120,
+         IncorrRate = Incorr/120) %>%
+  mutate(Feedback = case_when(Group == "Group1_PES_Task" ~ "Yes",
+                              Group == "Group2_PES_Task" ~ "Yes",
+                              Group == "Group3_PES_Task" ~ "No",
+                              Group == "Group4_PES_Task" ~ "No"))
+
+write_csv(Average, "ReadytoAnalyseData/Average_561_NAreplaced.csv")
+
+
+```
+
+```{r Checking and removing outliers}
+
+Average <- read_csv("ReadytoAnalyseData/Average_561_NAreplaced.csv")
+
+
+## Checking outliers
+
+upper <- function(x) {
+  a = mean(x, na.rm = T)
+  b = sd(x, na.rm = T)
+  uppervalue = a+3*b
+  ifelse(x > uppervalue, uppervalue, x)
+}
+
+lower <- function(x) {
+  a = mean(x, na.rm = T)
+  b = sd(x, na.rm = T)
+  lowervalue = a-3*b
+  ifelse(x < lowervalue, lowervalue, x)
+}
+
+# Code below doesnt seem to work?
+
+windsorise <- function(x){
+  a = mean(x, na.rm = T)
+  b = sd(x, na.rm = T)
+  uppervalue = a+3*b
+  lowervalue = a-3*b
+  ifelse(lower(x), lowervalue, x) 
+  ifelse(upper(x), uppervalue, x)
+}
+
+# Determine values fall out of normal range, replace them with 100, as to differentiate from NA from participant make 0 mistakes.
+
+
+Average <- Average %>%
+  group_by(Task) %>%
+  mutate_at(vars(PEStrad, PESrobust),
+            upper) %>%
+  mutate_at(vars(PEStrad, PESrobust),
+            lower) 
+
+write_csv(Average, "ReadytoAnalyseData/Average_OutlierRm.csv")
+
+```
+
+
+```{r}
+# png("RTtypedistribution.png", width = 600, height = 600)
+# Average %>% 
+#   gather("Type", "RT", 9:12) %>%
+#   ggplot(aes(RT, colour = Type)) +
+#   geom_histogram(binwidth = 0.3, alpha = 0.3) +
+#   facet_wrap(vars(Task)) +
+#   labs(y = "RT", x = "Task",
+#         title = "Distribution of RT type by Task") +
+#   theme_apa() +
+#   theme(legend.position = "bottom") 
+# dev.off
+# 
+# png("PEStypedistribution.png", width = 1000, height = 800)
+# df %>%
+#   dplyr::rename(PEStrad_no_outlier = 26) %>%
+#   dplyr::rename(PESrobust_no_outlier = 27) %>%
+#   gather("Type", "PES", 19,20,26,27) %>%
+# ggplot(aes(PES, colour = Task)) +
+#   geom_histogram(binwidth = 0.3, alpha = 0.8) +
+#   facet_grid(Type ~ Task) +
+#     labs(y = "Post-error Slowing", x = "Task",
+#         title = "Distribution of PES type by Task") +
+#   theme_apa() +
+#   theme(legend.position = "none")
+# dev.off
+# Check the number of outliers would be replaced
+# PEStrad: (1 Flan, 6 Num, 7 Sci) 13 upper outliers, 1 Flan, 2 Num, 2Sci lower outliers 
+# PESrobust: 0 Flan, 7 Num, 7 Sci upper outliers, 2 Flan,6 Num,7 Sci lower outliers 
+
+# Trad: upper before lower, 28 in total, 
+# 15 upper
+# 13 lower, 8 cases more than the actual
+
+# Robust: lower before upper, 31 in total
+# 18 lower, 3 more than the actual
+# 13 upper
+ 
+# Get descriptive stats
+# summarySE is a function of Rmism package
+summarySE(Average, measurevar =  c("RTcorr"),
+          groupvar = c("Task"), na.rm = TRUE)
+```
+
+
+```{r Checking distributions}
+
+#### Distribution of RT
+png("RTdistribution.png", width = 600, height = 600)
+Average %>% ggplot(aes(RT, colour = Task)) +
+  geom_histogram(binwidth = 0.3) +
+  facet_wrap(~ Task) +
+  labs(y = "RT", x = "Task",
+        title = "Distribution of RT by Tasks") +
+  theme_apa() +
+  theme(legend.position = "none") 
+dev.off
+
+#### Distribution of RT used for PES 
+png("RTtypedistribution.png", width = 600, height = 600)
+Average %>% 
+  gather("Type", "RT", 9:12) %>%
+  ggplot(aes(RT, colour = Type)) +
+  geom_histogram(binwidth = 0.3, alpha = 0.3) +
+  facet_wrap(vars(Task)) +
+  labs(y = "RT", x = "Task",
+        title = "Distribution of RT type by Task") +
+  theme_apa() +
+  theme(legend.position = "bottom") 
+dev.off
+  
+
+```
+
+
+```{r Checking the corr rate}
+
+# Checking whether there are NA in postC
+filter(Average, is.na(postC))
+
+# ID 94470 returns NA in postC
+# Check corr rate
+Average %>%
+  filter(RandomID == 57502)
+
+by(Average$IncorrRate, Average$Task, mean)
+
+# ID 57502 & 94470 incorr rate too high in Flanker
+# ID 57502 Incorr 118, 
+# ID 94470 Incorr 116
+# Remove them
+
+Alltrial <- Alltrial %>%
+  filter(RandomID != 57502 & RandomID != 94470)
+
+Average <- Average %>%
+  filter(RandomID != 57502 & RandomID != 94470)
+
+write_csv(Alltrial, "ReadytoAnalyseData/Alltrial_564.csv")
+write_csv(Average, "ReadytoAnalyseData/Average_564_OutlierRm.csv")
+
+Average <- read_csv("ReadytoAnalyseData/Average_564_OutlierRm.csv")
+
+# Determine the number of rows of Flanker NA, participants who do not make mistakes.
+
+Average %>%
+  group_by(Task) %>%
+  summarise(sum = sum(is.na(PEStrad))) # Result is 110 in Flanker
+
+
+```
+
+
+```{r Check numbers of ppt}
+
+Average %>%
+  dplyr::group_by(Task) %>%
+  dplyr::summarise(sum = sum(is.na(PEStrad)))
+
+# Check missing value visually
+vis_dat(df1[, 25:26])
+
+write_csv(df, "ReadytoAnalyseData/Average_564_processed.csv")
+write_csv(df1, "ReadytoAnalyseData/Average_564_NAreplaced.csv")
+
+```
+

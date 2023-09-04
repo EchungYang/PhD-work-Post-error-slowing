@@ -1,0 +1,200 @@
+---
+title: "PsychoPy Data subset by Task and Group"
+author: "Yiqiong Yang (Miriam)"
+date: "09/09/2021"
+output: html_document
+---
+
+## Raw Data Wrangling
+## Combine datasets from all groups 
+This markdown file is for wrangling the raw data from all four groups.
+
+
+```{r Loading packages}
+require(tidyverse)
+require(data.table) # To bind rows when col type doesnt match for Group3 data
+```
+
+```{r Import data}
+
+# Read all the csv file 
+# Combine all csv files 
+
+G1 <- list.files("RawData/G1", pattern="*.csv", 
+                 full.names = TRUE) %>% 
+  lapply(read_csv, col_types = cols("Participant_ID*" = col_character())) %>% 
+  bind_rows()
+
+G2 <- list.files("RawData/G2", pattern="*.csv", 
+                 full.names = TRUE) %>% 
+  lapply(read_csv, col_types = cols("Participant_ID*" = col_character())) %>% 
+  bind_rows()
+
+G3 <- list.files("RawData/G3", pattern="*.csv", 
+                 full.names = TRUE) %>% 
+  lapply(read_csv, col_types = cols("Participant_ID*" = col_character())) %>% 
+  rbindlist(fill = TRUE)
+
+G4 <- list.files("RawData/G4", pattern="*.csv", 
+                 full.names = TRUE) %>% 
+  lapply(read_csv, col_types = cols("Participant_ID*" = col_character())) %>% 
+  bind_rows()
+
+#participant = col_character()
+
+# G1combined <- G1combined %>%
+#     rename(RandomID = "Participant_ID*", 
+#          ExpGroup = "Group_number(please choose the corresponding group)*") %>%
+#   select(-15) %>%
+# 
+
+naming <- function(df){
+df %>%
+  rename(RandomID = "Participant_ID*",
+         Accuracy = "Flanker_resp.corr",
+         RT = "Flanker_resp.rt",
+         Group = "expName",
+         Localtime = "date",
+         Stimuli = "text",
+         Congruency = "congruency") %>%
+      mutate(Task = case_when(!is.na(Congruency) ~ "Flanker",
+                          !is.na(Num_resp.rt) ~ "Numerical",
+                          !is.na(Sci_resp.rt) ~ "Science"))
+}
+
+
+df.list <- list(G1, G2, G3, G4)
+a <- lapply(df.list, naming)
+G1 <- as.data.frame(a[[1]])
+G2 <- as.data.frame(a[[2]])
+G3 <- as.data.frame(a[[3]])
+G4 <- as.data.frame(a[[4]])
+
+# detach(Rmisc)
+# 
+# if(any(grepl("package:plyr", search()))) detach("package:plyr") else message("plyr not loaded")
+# ## plyr not loaded
+# library("plyr")
+
+# R Subset Flanker Data
+
+FlankerSubset <- function(df){
+df %>% 
+  filter(Task == "Flanker") %>%
+  select(RandomID, Group, Task, RT, Accuracy, Localtime, Stimuli, Congruency)
+}  %>%
+  rename(categorise = "Congruency")
+
+G1Flanker <- FlankerSubset(G1)
+G2Flanker <- FlankerSubset(G2)
+G3Flanker <- FlankerSubset(G3)
+G4Flanker <- FlankerSubset(G4)
+
+# R Subset Numerical Data
+
+NumericalSubset <- function(df){
+df %>% 
+    filter(Task == "Numerical") %>%
+    select(RandomID, Group, Task, Localtime, categorise, Stimuli, 29:48) %>%
+    rename(RT = "Num_resp.rt",
+           Accuracy = "Num_resp.corr") %>%
+  select(RandomID, Group, Task, RT, Accuracy, Localtime, Stimuli, categorise)
+}  
+
+G1Numerical <- NumericalSubset(G1)
+G2Numerical <- NumericalSubset(G2)
+G3Numerical <- NumericalSubset(G3)
+G4Numerical <- NumericalSubset(G4)
+
+
+# R Subset Science Data
+
+ScienceSubset <- function(df){
+df %>% filter(Task == "Science") %>%
+  select(RandomID, Group, Task, Localtime, Stimuli, categorise, 45:73) %>%
+    rename(RT = "Sci_resp.rt",
+           Accuracy = "Sci_resp.corr") %>%
+    select(RandomID, Group, Task, RT, Accuracy, Localtime, Stimuli, categorise)
+}  
+
+G1Science <- ScienceSubset(G1)
+G2Science <- ScienceSubset(G2)
+G3Science <- ScienceSubset(G3)
+G4Science <- ScienceSubset(G4)
+
+```
+
+```{r Combine All file}
+
+Alldata <- rbind(G1Flanker, G1Numerical, G1Science,
+                 G2Flanker, G2Numerical, G2Science,
+                 G3Flanker, G3Numerical, G3Science,
+                 G4Flanker, G4Numerical, G4Science)
+
+Alldata %>%
+    dplyr::group_by(RandomID) %>%
+   dplyr::summarize(sum = sum(length(RandomID))) %>%
+  filter(sum != 360) 
+
+# RandomID 32757 return 720 rows
+
+Alldata <-  Alldata %>%
+  filter(RandomID != 12832)
+
+```
+
+
+```{r Deal with data with missing ID}
+
+missingID <- list.files("RawData/MissingID", pattern="*.csv", 
+                 full.names = TRUE) %>% 
+  lapply(read_csv, col_types = cols("Participant_ID*" = col_character())) %>% 
+  bind_rows()
+
+missingID <- naming(missingID) 
+
+missingID1 <- transform(missingID,
+                        RandomID=as.numeric(factor(Localtime)))
+
+missingFlanker <- FlankerSubset(missingID1)
+missingNumerical <- NumericalSubset(missingID1) 
+missingScience <- ScienceSubset(missingID1) 
+
+missingID <- rbind(missingFlanker, missingNumerical, missingScience)
+
+Alldata1 <- rbind(Alldata, missingID) # Combine the IDed data and missing ID data
+
+Alldata1 %>%
+   dplyr::group_by(RandomID) %>%
+   dplyr::summarize(sum = sum(length(RandomID))) %>%
+  filter(sum != 360)
+
+Alldata2 <- filter(Alldata1, RandomID != 20)
+
+```
+
+```{r Replace the category of Science taks}
+ScienceStatement <- read_csv("ScienceStatementInTask.csv") %>%
+  rename(Stimuli = 1,
+         Naive = 4,
+         Scientific = 5) %>%
+  mutate(Combine = paste(Naive, "_", Scientific))
+
+# Two statement were incorrectly spelled in the Science task, incorrect version within the parentheses
+# Ferns(ems) can reproduce
+# A(n) shadow can be cut in half
+# Ovens(Sens) produce heat? 
+
+Alldata3 <- left_join(Alldata2, ScienceStatement, by = "Stimuli") %>%
+  mutate(categorise = ifelse(is.na(categorise), Combine, categorise)) %>%
+  select(-c(9:13))
+
+
+Flanker <- filter(Alldata3, Task == "Flanker")
+Numerical <- filter(Alldata3, Task == "Numerical")
+Science <- filter(Alldata3, Task == "Science")
+
+write_csv(Alldata3, "ReadytoAnalyseData/Alldata.csv")
+
+```
+

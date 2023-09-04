@@ -1,0 +1,273 @@
+---
+title: "CalculatingPES"
+author: "Miriam Yang"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(bruceR)
+library(psych)
+library(ggplot2)
+
+```
+
+# Importing datasets
+```{r}
+
+Flanker <- read_csv("/Users/miriam/Documents/PES_Project/ReadytoAnalyseData/Flanker.csv")
+Numerical <- read_csv("/Users/miriam/Documents/PES_Project/ReadytoAnalyseData/Numerical.csv")
+Science <- read_csv("/Users/miriam/Documents/PES_Project/ReadytoAnalyseData/G2Science.csv")
+
+```
+
+
+
+# Define the function to calculate PES and PEA
+```{r Writing the function}
+
+##### equation:
+# - PES traditional = MRTpostEC -  MRTpostCC
+# - PES robust = MRTcceCc - MRTcCecc
+# - PES error = MRTcceCc - MRTccEc
+
+##### Condition 1: Determine if accuracy == 0
+##### Condition 2: Determine if accuracy == 1
+##### Condition 3: Determine ccEcc
+## PES calculation
+
+PEScalculator <- function(df){
+ df[,"condition1"] <- df[,"Accuracy"] == 0 
+ df[,"condition2"] <- df[,"Accuracy"] == 1
+ 
+ for(i in which(df[,"Accuracy"] == 0)){
+    if(nrow(df)>i && 
+       df[i+1,"Accuracy"] == 1 &&  
+       df[i-1,"Accuracy"] == 1 && 
+       df[i+2,"Accuracy"] == 1 &&
+       df[i-2,"Accuracy"] == 1 )           
+    df[i,"ccEcc"] <- df[i,"RT"] 
+    
+    if(nrow(df)>i &&
+       df[i+1,"Accuracy"] == 1)                              
+    df[i+1,"postE"] <- df[i+1,"RT"]  # postE: Post-error correct 
+ } 
+
+  df[,"condition3"] <- !is.na(df[,"ccEcc"])
+
+ for (k in which(df[, "condition3"] == TRUE)) {
+   if(nrow(df)>k)
+     df[k+1,"cceCc"] <- df[k+1,"RT"] # cceCc: post error pre correct 
+     df[k-1,"cCecc"] <- df[k-1,"RT"] # cCecc: post correct pre error
+ 
+ }
+ 
+for(j in which(df[, "Accuracy"] == 1)){
+  if(nrow(df)>j &&
+       df[j+1,"Accuracy"] == 1)
+    df[j+1,"postC"] <- df[j+1,"RT"] # postC: post correct correct items
+ }
+ return(df)
+}
+
+# # G2 & G4 Science data need to be run separately as function throws error.
+# 
+# df <- G4Science
+# 
+# df[,"condition1"] <- df[,"Accuracy"] == 0
+# df[,"condition2"] <- df[,"Accuracy"] == 1
+# 
+#  for(i in which(df[,"Accuracy"] == 0)){
+#     if(nrow(df)>i &&
+#        df[i+1,"Accuracy"] == 1 &&
+#        df[i-1,"Accuracy"] == 1 &&
+#        df[i+2,"Accuracy"] == 1 &&
+#        df[i-2,"Accuracy"] == 1 )
+#     df[i,"ccEcc"] <- df[i,"RT"]
+# 
+#     if(nrow(df)>i &&
+#        df[i+1,"Accuracy"] == 1)
+#     df[i+1,"postE"] <- df[i+1,"RT"]  # postE: Post-error correct
+#  }
+# 
+#   df[,"condition3"] <- !is.na(df[,"ccEcc"])
+# 
+#  for (k in which(df[, "condition3"] == TRUE)) {
+#    if(nrow(df)>k)
+#      df[k+1,"cceCc"] <- df[k+1,"RT"] # cceCc: post error pre correct
+#      df[k-1,"cCecc"] <- df[k-1,"RT"] # cCecc: post correct pre error
+# 
+#  }
+# 
+# for(j in which(df[, "Accuracy"] == 1)){
+#   if(nrow(df)>j &&
+#        df[j+1,"Accuracy"] == 1)
+#     df[j+1,"postC"] <- df[j+1,"RT"] # postC: post correct correct items
+# }
+# 
+# G4Science1 <- df
+# 
+
+## Calculate post error accuracy
+## PEA(post-error accuracy), PCA(post-correct accuracy)
+## PEE(post-error error), PCE(post-correct eorror)
+PEAcalculator <- function(df){
+ for(i in which(df[,"Accuracy"] == 0)){
+   df[i, "Error"] <- "Yes"
+  if(nrow(df)>i &&
+     df[i+1,"Accuracy"] == 1)           
+    df[i+1,"PEC"] <- "Yes"
+  if(nrow(df)>i &&
+     df[i+1,"Accuracy"] == 0) 
+    df[i+1,"PEE"] <- "Yes" 
+ }
+ for(i in which(df[,"Accuracy"] == 1)){
+  if(nrow(df)>i &&
+     df[i+1,"Accuracy"] == 1)           
+    df[i+1,"PCC"] <- "Yes"
+  if(nrow(df)>i &&
+     df[i+1,"Accuracy"] == 0) 
+    df[i+1,"PCE"] <- "Yes"
+}
+return(df)
+}
+
+```
+
+
+# PES and PEA calculation
+```{r Running the functions to calculate PES and PEA}
+
+## This process would take around 30-40min..
+
+Flanker1 <- Flanker %>%
+  group_by(RandomID) %>%
+  PEScalculator() 
+
+Numerical1 <- Numerical %>%
+  group_by(RandomID) %>%
+  PEScalculator() 
+
+Science1 <- Science %>%
+  group_by(RandomID) %>%
+  PEScalculator() 
+
+####################################
+
+Flanker1 <- Flanker1 %>%
+  group_by(RandomID) %>%
+  PEAcalculator() 
+
+Numerical1 <- Numerical1 %>%
+  group_by(RandomID) %>%
+  PEAcalculator() 
+
+Science1 <- Science1 %>%
+  group_by(RandomID) %>%
+  PEAcalculator() 
+
+Alltrial <- rbind(Flanker1, Numerical1, Science1)
+
+test <- Flanker1 %>%
+  group_by(RandomID, Group) %>%
+  mutate(abc = mean(postC, na.rm = T))
+    mutate(PESmean = colMeans(matrix(Numerical1$cceCc, nrow=30), na.rm = T))
+
+NumcceCc <- colMeans(matrix(Numerical1$cceCc, nrow=30), na.rm = T)
+
+
+### Change parameters in the following for loop
+pid <- -1
+block <- c()
+block_count = 0
+for (i in Science1$RandomID) {
+  if (i != pid) {
+    pid = i
+    block <- c(block, 0)
+    block_count = 0
+  } else {
+    block_count <- block_count + 1
+    block <- c(block, floor(block_count/30))
+  }
+}
+
+
+Flanker1$block <- block + 1 
+Numerical1$block <- block  + 1
+Science1$block <- block  + 1
+
+write_csv(Flanker1, "ReadytoAnalyseData/Flanker.csv")
+write_csv(Numerical1, "ReadytoAnalyseData/Numerical.csv")
+write_csv(Science1, "ReadytoAnalyseData/Science.csv")
+
+
+```
+
+
+The following ID return non 360 rows:
+ID 12832 only show 40 trials in the science task (Removed)
+ID 23072, Duplicate ID, same ppt, removed the second attempt
+ID 37431, Duplicate ID, two ppts, change the one in Group 3 to 37432, done
+ID 47925 Duplicate ID, two ppts, change the one in Group 3 to 47926, done
+ID 86691 Duplicate ID, two ppts, change the one in Group 4 to 86691, done
+
+```{r Average}
+
+# Check if every participant got 360 rows of trial, and check if there are multiple record for one participant.
+
+Alldata3 %>%
+   dplyr::group_by(RandomID) %>%
+   dplyr::summarize(sum = sum(length(RandomID))) %>%
+  filter(sum != 360)
+
+```
+
+```{r Duplicate ID 32757}
+
+Alltrial$RandomID <- ifelse(Alltrial$Localtime == "2021-08-05_19h52.33.283",
+               "32758", Alltrial$RandomID)
+
+filter(test, RandomID == "32758")
+Alltrial <- mutate(Alltrial, RandomID == ifelse(RandomID == "32757" &
+                                            Localtime == "2021-08-05_19h52.33.283",
+                                           32758, RandomID))
+write_csv(Alltrial, "ReadytoAnalyseData/Alltrial_566.csv")
+
+```
+
+ 
+```{r Calculating Individuals' metrics}
+# detach(package:Rmisc)
+## PEA = PEC/PEE+PEC
+## PCA = PCC/PCE+PCC
+
+Average <- Alltrial %>%
+  mutate(RTcorr = case_when(Accuracy == 1 ~ RT),
+           RTincorr = case_when(Accuracy == 0 ~ RT)) %>%
+  group_by(RandomID, Group, Task, Localtime) %>%
+  dplyr::summarize(RT = mean(RT, na.rm = T),
+            RTcorr = mean(RTcorr, na.rm = T),
+            RTincorr = mean(RTincorr, na.rm = T),
+            cceCc = mean(cceCc, na.rm = T),
+            cCecc = mean(cCecc, na.rm = T),
+            postE = mean(postE, na.rm = T),
+            postC = mean(postC, na.rm = T),
+            PEC = sum(PEC == "Yes", na.rm = T),
+            PEE = sum(PEE == "Yes", na.rm = T),
+            PCC = sum(PCC == "Yes", na.rm = T),
+            PCE = sum(PCE == "Yes", na.rm = T),
+            Corr = sum(Accuracy == 1, na.rm = T),
+            Incorr = sum(Accuracy == 0, na.rm = T)) %>%
+  mutate(PEStrad = postE - postC,
+         PESrobust = cceCc - cCecc,
+         PEA = PEC/(PEC + PEE),
+         PCA = PCC/(PCC + PCE),
+         CorrRate = Corr/120,
+         IncorrRate = Incorr/120) %>%
+  mutate(Feedback = case_when(Group == "Group1_PES_Task" ~ "Feedback",
+                              Group == "Group2_PES_Task" ~ "Feedback",
+                              Group == "Group3_PES_Task" ~ "Control",
+                              Group == "Group4_PES_Task" ~ "Control"))
+# grepl("CA", x)
+```
+
